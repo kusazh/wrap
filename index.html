@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>wrap</title>
+    <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+
+    article {
+      position: relative;
+      width: 32rem;
+      height: 100vh;
+      margin: auto;
+      overflow: hidden;
+      font:
+        16px / 1.5 "Gill Sans",
+        "Gill Sans MT",
+        sans-serif;
+    }
+
+    p {
+      margin: 0;
+    }
+
+    p > span {
+      position: absolute;
+      white-space: pre;
+    }
+    </style>
+  </head>
+  <body>
+    <article>
+      <p>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Proin feugiat
+        magna eget magna convallis facilisis. Sed volutpat vitae nisi nec
+        consectetur. Nulla porta viverra purus non sollicitudin. Phasellus
+        accumsan rhoncus magna, nec rhoncus erat tincidunt at. Morbi sed dui ut
+        lectus pharetra sollicitudin sit amet vel velit. Suspendisse sed
+        bibendum urna. Suspendisse sed interdum ex, non pellentesque nisi.
+        Phasellus interdum gravida justo id hendrerit. Fusce et ultrices urna,
+        fringilla vehicula tortor. Fusce posuere, dolor nec scelerisque tempus,
+        odio nisi pulvinar ante, eget volutpat quam sem vitae urna. Maecenas
+        rutrum a eros ac efficitur. Nulla congue tincidunt nisl id eleifend.
+        Cras a ipsum at purus dapibus viverra ut ut nunc. Aliquam et congue
+        ligula. Nulla in rutrum mauris.
+      </p>
+      <p>
+        Nulla at nisi a urna condimentum sodales dignissim ut orci. Sed sit amet
+        diam porta, cursus nulla nec, euismod orci. Curabitur viverra, mi sed
+        consequat hendrerit, dolor nulla volutpat nisl, vitae fermentum nunc
+        enim ut magna. Aliquam dignissim mauris ac ante pellentesque, id commodo
+        turpis pulvinar. Phasellus odio arcu, tempus eu molestie et, aliquet et
+        quam. Class aptent taciti sociosqu ad litora torquent per conubia
+        nostra, per inceptos himenaeos. Maecenas malesuada volutpat lorem,
+        volutpat mattis turpis dignissim ut. In consectetur, odio at pulvinar
+        consectetur, ipsum odio convallis nibh, eu tincidunt magna nisl eget
+        urna. In odio neque, laoreet eget velit in, faucibus rutrum risus.
+        Nullam in sem eleifend sapien ornare accumsan at volutpat nulla.
+      </p>
+      <p>
+        In at enim nec libero consequat sollicitudin. Pellentesque at
+        condimentum lacus. Sed ligula augue, blandit id lorem eu, venenatis
+        fermentum sapien. Duis nibh arcu, maximus nec hendrerit non, consectetur
+        nec metus. Vestibulum tincidunt dui eget mattis ornare. Aenean venenatis
+        imperdiet felis condimentum tempor. Ut bibendum, dolor quis feugiat
+        sollicitudin, urna massa rutrum dui, at varius dolor enim nec risus.
+        Mauris fermentum ullamcorper libero, ut luctus dui blandit quis. Nulla
+        tempus eros sed velit scelerisque finibus. Sed fermentum, sapien quis
+        commodo convallis, tellus purus auctor risus, a fermentum mi ligula et
+        arcu.
+      </p>
+    </article>
+
+    <script type="module">
+    import {
+      layoutNextLine,
+      prepareWithSegments,
+    } from 'https://cdn.jsdelivr.net/npm/@chenglou/pretext@0.0.8/dist/layout.js';
+    import hyphenopoly from 'https://cdn.jsdelivr.net/npm/hyphenopoly@6.1.0/hyphenopoly.module.js';
+
+    const article = document.querySelector('article');
+    const elements = [...article.querySelectorAll('p')];
+    const hyphenator = hyphenopoly.config({
+      require: ['la'],
+      minWordLength: 7,
+      leftmin: 3,
+      rightmin: 3,
+      loader: async (file, directory) => {
+        const response = await fetch(new URL(file, directory));
+        return response.arrayBuffer();
+      },
+    });
+    const hyphenate = await hyphenator.get('la');
+
+    await document.fonts.ready;
+    const style = getComputedStyle(article);
+    const lineHeight = Number.parseFloat(style.lineHeight);
+    const font = `${style.fontSize} ${style.fontFamily}`;
+    const paragraphs = elements.map((element) => ({
+      element,
+      prepared: prepareWithSegments(hyphenate(element.textContent), font),
+    }));
+
+    let pointer = null;
+    let frame = 0;
+
+    function getSlots(y, width) {
+      if (!pointer) return [{ x: 0, width }];
+
+      const distance = Math.abs(y + lineHeight / 2 - pointer.y);
+      if (distance >= 58) return [{ x: 0, width }];
+
+      const halfChord = Math.sqrt(58 ** 2 - distance ** 2);
+      const left = Math.max(0, pointer.x - halfChord);
+      const right = Math.min(width, pointer.x + halfChord);
+      const slots = [];
+
+      if (left > 18) slots.push({ x: 0, width: left });
+      if (width - right > 18) slots.push({ x: right, width: width - right });
+      return slots;
+    }
+
+    function render() {
+      frame = 0;
+      const width = article.clientWidth;
+      const bottom = article.clientHeight - 32;
+      let y = 32;
+
+      for (const paragraph of paragraphs) {
+        const fragment = document.createDocumentFragment();
+        let cursor = { segmentIndex: 0, graphemeIndex: 0 };
+        let done = false;
+
+        while (y + lineHeight <= bottom && !done) {
+          let wroteLine = false;
+
+          for (const slot of getSlots(y, width)) {
+            const line = layoutNextLine(paragraph.prepared, cursor, slot.width);
+            if (!line) {
+              done = true;
+              if (wroteLine) y += lineHeight;
+              break;
+            }
+
+            cursor = line.end;
+            wroteLine = true;
+
+            const span = document.createElement('span');
+            span.textContent = line.text;
+            span.style.left = `${slot.x}px`;
+            span.style.top = `${y}px`;
+            fragment.append(span);
+          }
+
+          if (!done) y += lineHeight;
+        }
+
+        paragraph.element.replaceChildren(fragment);
+        y += lineHeight;
+      }
+    }
+
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(render);
+    }
+
+    article.addEventListener('pointermove', (event) => {
+      const bounds = article.getBoundingClientRect();
+      pointer = {
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      };
+      schedule();
+    });
+
+    article.addEventListener('pointerleave', () => {
+      pointer = null;
+      schedule();
+    });
+
+    addEventListener('resize', () => {
+      pointer = null;
+      schedule();
+    });
+
+    render();
+    </script>
+  </body>
+</html>
